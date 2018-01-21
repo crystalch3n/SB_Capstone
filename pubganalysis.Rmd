@@ -1,0 +1,235 @@
+# What Stats In Player Unknown's Battleground Are Important In Determining A Players Probability In Winning
+
+## Introduction
+
+PLAYERUNKNOWN'S BATTLEGROUNDS (PUBG) since its release has become the largest played game of the year, shattering many game records, while still in early access. PUBG recently had a full release and reached a new record of 3 million concurrent players. 
+
+## The Problem
+
+The PUBG community often obsess over their statistics. Having the highest kill death average is almost trophy status. But is the number of kills or your kill death ratio the only indicator of your success in the game? Or are there other variables just as important at predicting a players success at PUBG?
+
+Our goal of analysis is to see which statistics are important in determining a player's probability of winning. Also, to pick out which strategies could be important in increasing your chances of winning. 
+
+## Data Set
+
+This data set contains all regions around the world, and each of the three game modes (solo, duo, squad). There are 87,898 players and 150 variables. 
+
+Some of the dependent variabless that are in the set include. 
+
+* solo_KillDeathRatio Which is the number of total kills divided by total deaths.
+* solo_RoundsPlayed
+* solo_Top10s
+* solo_bestrating, the best rating that the player has received.
+* solo_Damagepg
+
+Not only are these stats available for solo game matches but duos and squads as well. 
+
+The data set can be found at the following link: https://www.kaggle.com/lazyjustin/pubgplayerstats
+
+## Data Limitations
+
+The data does not include the length of time each player has been playing the game. It is hard to differentiate between veteran players from the newer players and to compare their strategies. Since the data is a summary of each player and not a log of each match, our results are based off averages instead of totals. Therefore we can see a trends and relationships, but they may not be accurate in numbers. 
+
+## Data Wrangling
+
+```{r, warning = FALSE, message = FALSE, echo = FALSE, results = "hide"}
+library(dplyr)
+library(tidyr)
+library(ggplot2)
+library(caTools)
+pubg <- read.csv("PUBG_Player_Statistics.csv")
+
+```
+
+View data set.
+
+```{r}
+str(pubg)
+```
+
+
+The data is complete and not missing any values, however some variables do not contribute to analysis, for example, the WeaponAcquired for solo, duo, and squads. 
+
+The "ratio" factors have to be recalculated also because they show percentages instead of ratios. Convert back to ratios. 
+
+Some of the players only have played only one or two rounds in the game. These inviduals do not play enough to show a pattern, and can affect the data if they play one game and win one game they have 100% success. Thus we only want individuals who play above 100 matches. 
+
+```{r, warning = FALSE, message = FALSE, echo = FALSE, results = "hide"}
+pubg <- pubg %>%
+  select(-tracker_id, -solo_WeaponAcquired, -duo_WeaponAcquired, squad_WeaponAcquired) %>%
+  filter(solo_RoundsPlayed >= 100) %>%
+  filter(duo_RoundsPlayed >= 100) %>%
+  filter(squad_RoundsPlayed >= 100)
+
+pubg$solo_WinRatio = pubg$solo_WinRatio/100
+pubg$duo_WinRatio = pubg$duo_WinRatio/100
+pubg$squad_WinRatio = pubg$squad_WinRatio/100 
+pubg$solo_Top10Ratio = pubg$solo_Top10Ratio/100
+pubg$duo_Top10Ratio = pubg$duo_Top10Ratio/100
+pubg$squad_Top10Ratio = pubg$squad_Top10Ratio/100
+
+
+str(pubg)
+  
+```
+
+
+For the machine learning analysis it is necessary to split the data for the three game modes to keep the extraneous variables consistent (playing with a team vs. playing alone). In the solo game mode there are stats that do not apply because they are not available in the game mode, thus you remove solo_revives and solo_DBNOs.  
+
+```{r}
+#Solo player data
+pubgsolo <- pubg %>%
+  select(starts_with("solo")) %>%
+  select(-solo_Revives, -solo_DBNOs) %>%
+  mutate(solo_AvgBoosts = solo_Boosts/solo_RoundsPlayed) %>%
+  mutate(AvgHeals = solo_Heals/solo_RoundsPlayed)
+
+
+pubgduo <- pubg %>%
+  select(starts_with("duo")) %>%
+  mutate(duo_AvgBoosts = duo_Boosts/duo_RoundsPlayed) %>%
+  mutate(AvgHeals = duo_Heals/duo_RoundsPlayed)
+
+
+pubgsquad <- pubg %>%
+  select(starts_with("squad")) %>%
+  mutate(squad_AvgBoosts = squad_Boosts/squad_RoundsPlayed) %>%
+  mutate(AvgHeals = squad_Heals/squad_RoundsPlayed)
+
+
+```
+
+For the preliminary analysis it would be nice to see the three game values therefore if we create a new variable "game mode" and create a new df to split the data into solo, duo and squad modes. 
+
+```{r}
+
+pubgsplit <- pubg %>%
+  gather(Stat, value, solo_KillDeathRatio:squad_DBNOs) %>%
+  separate(Stat, c("Game_Mode", "Variable"), sep = "_") %>%
+  spread(Variable, value) %>%
+  mutate(AvgBoosts = Boosts/RoundsPlayed) %>%
+  mutate(AvgHeals = Heals/RoundsPlayed)
+
+```
+
+## Preliminary Analysis
+
+```{r}
+ggplot(pubgsplit, aes(BestRating)) + geom_histogram(binwidth = 50) + facet_grid(Game_Mode ~ .)
+ggplot(pubgsplit, aes(WinRatio)) + geom_histogram(binwidth = .01) + facet_grid(Game_Mode ~ .)
+```
+
+
+From the histograms above, we can see that we have a normal distribution of spread based on the player's BestRating and WinRatio. After combing through our data this subset will give a model fitting players of PUBG. Show general trends based on variables. 
+
+### MoveDistancePg, Distances traveled in game.
+
+```{r}
+ggplot(pubgsplit, aes(MoveDistancePg, WinRatio, col = Game_Mode)) + geom_point() + facet_grid(Game_Mode ~.) + 
+  geom_smooth(method = "lm", col = "black")
+```
+  
+### KillDeathRatio, Number of kills divided by deaths.
+
+```{r}
+ggplot(pubgsplit, aes(KillDeathRatio, WinRatio, col = Game_Mode)) + geom_point() + facet_grid(Game_Mode ~.) + 
+  geom_smooth(method = "lm", col = "black")
+```
+
+### AvgBoosts, Average boosts used per game. 
+
+```{r}
+ggplot(pubgsplit, aes(AvgBoosts, WinRatio, col = Game_Mode)) + geom_point() + facet_grid(Game_Mode ~.) + 
+  geom_smooth(method = "lm", col = "black")
+```
+
+### Average Ride Distance per game.
+
+```{r}
+ggplot(pubgsplit, aes(AvgRideDistance, WinRatio, col = Game_Mode)) + geom_point() + facet_grid(Game_Mode ~.) + 
+  geom_smooth(method = "lm", col = "black")
+```
+
+### Average Walk Distance per game.
+
+```{r}
+ggplot(pubgsplit, aes(AvgRideDistance, WinRatio, col = Game_Mode)) + geom_point() + facet_grid(Game_Mode ~.) + 
+  geom_smooth(method = "lm", col = "black")
+```
+
+### AvgHeals, Average healing done per game.
+
+```{r}
+ggplot(pubgsplit, aes(AvgHeals, WinRatio, col = Game_Mode)) + geom_point() + facet_grid(Game_Mode ~.) + 
+  geom_smooth(method = "lm", col = "black")
+```
+
+For the variables of MoveDistancePg, KillDeathRatio, and AvgBoosts seem to show a stronger positive relationship with WinRatio than any of the other variables.
+
+## Machine Learning
+
+Using Machine Learning to show that these other variables are just as important as the KillDeathRatio. Also that these variable can help improve the higher WinRatio in games. 
+
+First create a training subset and test subset. Since our data set is large we will use a 75/25 split, 75% training and 25% test. Then run analysis for each game mode type. 
+
+Because the data provides number of wins and losses per player, we need to use the cbind() fucntion to provide ratio of successes vs. failures. 
+
+```{r}
+pubgsolo$soloWinLoss <- cbind(pubgsolo$solo_Wins, pubgsolo$solo_Losses)
+pubgduo$duoWinLoss <- cbind(pubgduo$duo_Wins, pubgduo$duo_Losses)
+pubgsquad$squadWinLoss <- cbind(pubgsquad$squad_Wins, pubgsquad$squad_Losses)
+```
+
+
+### Solo Game Mode
+```{r}
+set.seed(1234)
+split = sample.split(pubgsolo$solo_WinRatio, SplitRatio = 0.75)
+str(pubgsolo)
+pubgTraining = subset(pubgsolo, split == TRUE)
+pubgTest = subset(pubgsolo, split == FALSE)
+
+#Check to make sure the Training set is approximately 75%
+nrow(pubgTraining)
+nrow(pubgTest)
+nrow(pubgTraining)/sum(nrow(pubgTraining)+(nrow(pubgTest)))
+```
+
+Now use backwards selection to build a logistic model, where you start with all independent variables and remove those that have no significance. 
+
+```{r}
+pubgsololog1 <- glm(soloWinLoss ~ ., data = pubgTraining, family = binomial)
+summary(pubgsololog1)
+```
+
+Select all variables with significance above 0.1. 
+
+```{r}
+pubgsololog2 <- glm(soloWinLoss ~ solo_KillDeathRatio + solo_WinRatio + solo_RoundsPlayed + solo_Wins + solo_WinTop10Ratio + solo_Top10s + solo_BestRating + solo_HeadshotKillsPg + solo_KillsPg + solo_MoveDistancePg + solo_TimeSurvivedPg + solo_Assists + solo_HeadshotKills + solo_DailyKills + solo_RoundMostKills + solo_LongestTimeSurvived + solo_WinPoints + solo_WalkDistance + solo_RideDistance + solo_MoveDistance + solo_AvgBoosts, data = pubgTraining, family = binomial)
+summary(pubgsololog2)
+```
+
+Continuing removing insignificant factors.
+
+```{r}
+pubgsololog3 <- glm(soloWinLoss ~ solo_KillDeathRatio + solo_WinRatio + solo_RoundsPlayed + solo_WinTop10Ratio + solo_BestRating + solo_KillsPg + solo_MoveDistancePg + solo_TimeSurvivedPg + solo_Assists + solo_HeadshotKills + solo_DailyKills + solo_RoundMostKills + solo_LongestTimeSurvived + solo_WinPoints + solo_WalkDistance + solo_RideDistance + solo_MoveDistance + solo_AvgBoosts, data = pubgTraining, family = binomial)
+summary(pubgsololog3)
+```
+
+Since we really want to determine variables per game to help individuals figure out a strategy per game. We will remove all variables that are not relevant to an average game.
+
+```{r}
+pubgsololog3 <- glm(soloWinLoss ~ solo_KillDeathRatio + solo_BestRating + solo_KillsPg + solo_MoveDistancePg + solo_TimeSurvivedPg + solo_AvgBoosts + solo_DamagePg + solo_HeadshotKillsPg + solo_HealsPg + solo_KillsPg + solo_RoadKillsPg + solo_AvgWalkDistance + solo_AvgRideDistance , data = pubgTraining, family = binomial)
+summary(pubgsololog3)
+```
+```{r}
+pubgsololog4 <- glm(soloWinLoss ~ solo_BestRating + solo_KillsPg + solo_MoveDistancePg + solo_TimeSurvivedPg + solo_AvgBoosts + solo_DamagePg + solo_HeadshotKillsPg + solo_KillsPg + solo_RoadKillsPg + solo_AvgWalkDistance + solo_AvgRideDistance , data = pubgTraining, family = binomial)
+summary(pubgsololog4)
+plot(pubgsololog4)
+```
+
+From the tests we find that pubgsololog1 had the smallest AIC and was the most accurate even though it contains insignificant variables. This would be the most accurate regression to determine a player's ratio of wins. 
+
+To increase chances of winning per game you can use pubgsololog4 to see what your probability of winning is. From the data in solo matches an individual wants to have high kills, move large distances, use boosts and use a vehicle. Most interesting of all your KillDeathRatio does not matter in determining if you will in a current game. 
+
+
