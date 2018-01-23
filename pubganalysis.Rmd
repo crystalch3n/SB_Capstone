@@ -122,7 +122,7 @@ ggplot(pubgsplit, aes(WinRatio)) + geom_histogram(binwidth = .01) + facet_grid(G
 
 From the histograms above, we can see that we have a normal distribution of spread based on the player's BestRating and WinRatio. After combing through our data this subset will give a model fitting players of PUBG. Show general trends based on variables. 
 
-### MoveDistancePg, Distances traveled in game.
+### MoveDistancePg, Distances traveled in game. change name to Distance traveled in game. Typo
 
 ```{r}
 ggplot(pubgsplit, aes(MoveDistancePg, WinRatio, col = Game_Mode)) + geom_point() + facet_grid(Game_Mode ~.) + 
